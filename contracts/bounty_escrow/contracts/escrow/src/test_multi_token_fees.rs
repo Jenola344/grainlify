@@ -98,7 +98,10 @@ fn test_calculate_fee_ceiling_exact_division() {
 
 #[test]
 fn test_calculate_fee_zero_rate() {
-    assert_eq!(crate::BountyEscrowContract::calculate_fee_pub(1_000_000, 0), 0);
+    assert_eq!(
+        crate::BountyEscrowContract::calculate_fee_pub(1_000_000, 0),
+        0
+    );
 }
 
 #[test]
@@ -131,13 +134,9 @@ fn test_set_token_fee_config_invalid_lock_rate_rejected() {
 #[test]
 fn test_set_token_fee_config_invalid_release_rate_rejected() {
     let s = Suite::new();
-    let result = s.client.try_set_token_fee_config(
-        &s.token_id,
-        &0,
-        &10_001,
-        &s.fee_recipient,
-        &true,
-    );
+    let result =
+        s.client
+            .try_set_token_fee_config(&s.token_id, &0, &10_001, &s.fee_recipient, &true);
     assert_eq!(result.unwrap_err().unwrap(), Error::InvalidFeeRate);
 }
 
@@ -176,8 +175,7 @@ fn test_lock_fee_collected_correctly() {
 
     let gross = 1_000_000i128;
     s.fund_depositor(gross);
-    s.client
-        .lock_funds(&s.depositor, &1, &gross, &s.deadline());
+    s.client.lock_funds(&s.depositor, &1, &gross, &s.deadline());
 
     // fee = ceil(1_000_000 * 200 / 10_000) = ceil(20_000) = 20_000
     let expected_fee = 20_000i128;
@@ -205,7 +203,8 @@ fn test_lock_no_fee_when_rate_zero() {
 
     let amount = 500_000i128;
     s.fund_depositor(amount);
-    s.client.lock_funds(&s.depositor, &1, &amount, &s.deadline());
+    s.client
+        .lock_funds(&s.depositor, &1, &amount, &s.deadline());
 
     assert_eq!(s.balance(&s.fee_recipient), 0);
     assert_eq!(s.client.get_escrow_info(&1).amount, amount);
@@ -220,7 +219,8 @@ fn test_lock_no_fee_when_disabled() {
 
     let amount = 100_000i128;
     s.fund_depositor(amount);
-    s.client.lock_funds(&s.depositor, &1, &amount, &s.deadline());
+    s.client
+        .lock_funds(&s.depositor, &1, &amount, &s.deadline());
 
     assert_eq!(s.balance(&s.fee_recipient), 0);
     assert_eq!(s.client.get_escrow_info(&1).amount, amount);
@@ -289,7 +289,8 @@ fn test_per_token_config_overrides_global() {
 
     let amount = 100_000i128;
     s.fund_depositor(amount);
-    s.client.lock_funds(&s.depositor, &1, &amount, &s.deadline());
+    s.client
+        .lock_funds(&s.depositor, &1, &amount, &s.deadline());
 
     // Per-token 3% = 3_000 fee; global 1% would have been 1_000
     assert_eq!(
@@ -314,7 +315,8 @@ fn test_global_fee_used_when_no_token_config() {
 
     let amount = 100_000i128;
     s.fund_depositor(amount);
-    s.client.lock_funds(&s.depositor, &1, &amount, &s.deadline());
+    s.client
+        .lock_funds(&s.depositor, &1, &amount, &s.deadline());
 
     assert_eq!(s.balance(&s.fee_recipient), 1_000);
 }

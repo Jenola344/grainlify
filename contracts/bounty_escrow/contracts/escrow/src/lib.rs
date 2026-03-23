@@ -2211,13 +2211,20 @@ impl BountyEscrowContract {
         };
 
         // Net payout to contributor after release fee.
-        let net_payout = escrow.amount.checked_sub(release_fee).unwrap_or(escrow.amount);
+        let net_payout = escrow
+            .amount
+            .checked_sub(release_fee)
+            .unwrap_or(escrow.amount);
         if net_payout <= 0 {
             return Err(Error::InvalidAmount);
         }
 
         if release_fee > 0 {
-            client.transfer(&env.current_contract_address(), &fee_recipient, &release_fee);
+            client.transfer(
+                &env.current_contract_address(),
+                &fee_recipient,
+                &release_fee,
+            );
             events::emit_fee_collected(
                 &env,
                 events::FeeCollected {
@@ -2231,11 +2238,7 @@ impl BountyEscrowContract {
         }
 
         // Transfer net amount to contributor
-        client.transfer(
-            &env.current_contract_address(),
-            &contributor,
-            &net_payout,
-        );
+        client.transfer(&env.current_contract_address(), &contributor, &net_payout);
 
         escrow.status = EscrowStatus::Released;
         escrow.remaining_amount = 0;
