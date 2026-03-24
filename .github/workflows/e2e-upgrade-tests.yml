@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
 
 env:
-  # Use stable to ensure compatibility with Cargo.lock v4 across contract crates.
+  # Keep toolchain modern for Cargo.lock v4 and edition-2024 transitive dependencies.
   RUST_VERSION: stable
   SOROBAN_CLI_VERSION: 20.0.0
 
@@ -60,7 +60,7 @@ jobs:
 
       - name: Install Soroban CLI
         run: |
-          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+          cargo install soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
 
       - name: Build Grainlify Core Contract
         working-directory: contracts/grainlify-core
@@ -117,7 +117,7 @@ jobs:
 
       - name: Install Soroban CLI
         run: |
-          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+          cargo install soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
 
       - name: Build Bounty Escrow Contract
         working-directory: contracts/bounty_escrow/contracts/escrow
@@ -174,7 +174,7 @@ jobs:
 
       - name: Install Soroban CLI
         run: |
-          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+          cargo install soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
 
       - name: Build Program Escrow Contract
         working-directory: contracts/program-escrow
@@ -216,7 +216,7 @@ jobs:
 
       - name: Install Soroban CLI
         run: |
-          cargo install --locked soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
+          cargo install soroban-cli --version ${{ env.SOROBAN_CLI_VERSION }}
 
       - name: Run Integration Tests
         working-directory: contracts
