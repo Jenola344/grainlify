@@ -275,25 +275,36 @@ mod monitoring {
         );
     }
 
-    // Track performance
+    /// Tracks performance metrics for a function invocation.
+    ///
+    /// Stores call count, total execution time, and last called timestamp.
+    /// Uses consistent symbol keys: `perf_cnt`, `perf_time`, `perf_last`.
+    ///
+    /// # Retention Policy
+    /// Performance stats use persistent storage and are retained indefinitely.
+    /// Storage growth is bounded by the number of tracked functions, which is
+    /// limited to contract-defined hot functions (init, upgrade, set_ver, migrate).
     pub fn emit_performance(env: &Env, function: Symbol, duration: u64) {
         let count_key = (Symbol::new(env, "perf_cnt"), function.clone());
         let time_key = (Symbol::new(env, "perf_time"), function.clone());
+        let last_key = (Symbol::new(env, "perf_last"), function.clone());
 
         let count: u64 = env.storage().persistent().get(&count_key).unwrap_or(0);
         let total: u64 = env.storage().persistent().get(&time_key).unwrap_or(0);
+        let timestamp = env.ledger().timestamp();
 
         env.storage().persistent().set(&count_key, &(count + 1));
         env.storage()
             .persistent()
             .set(&time_key, &(total + duration));
+        env.storage().persistent().set(&last_key, &timestamp);
 
         env.events().publish(
             (symbol_short!("metric"), symbol_short!("perf")),
             PerformanceMetric {
                 function,
                 duration,
-                timestamp: env.ledger().timestamp(),
+                timestamp,
             },
         );
     }
@@ -349,8 +360,23 @@ mod monitoring {
         }
     }
 
-    // Get performance stats (e.g. for off-chain analytics)
-    #[allow(dead_code)]
+    /// Retrieves accumulated performance statistics for a tracked function.
+    ///
+    /// Returns call count, total execution time, average time, and last called
+    /// timestamp. Uses consistent symbol keys: `perf_cnt`, `perf_time`, `perf_last`.
+    ///
+    /// # Retention Policy
+    /// Stats are stored in persistent storage and grow linearly with the number
+    /// of tracked functions. Currently only contract-defined hot functions are
+    /// tracked (init, upgrade, set_ver, migrate), ensuring bounded storage.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `function_name` - Symbol identifying the tracked function
+    ///
+    /// # Returns
+    /// `PerformanceStats` containing call count, total time, average time,
+    /// and last called timestamp. Returns zeroes for untracked functions.
     pub fn get_performance_stats(env: &Env, function_name: Symbol) -> PerformanceStats {
         let count_key = (Symbol::new(env, "perf_cnt"), function_name.clone());
         let time_key = (Symbol::new(env, "perf_time"), function_name.clone());
@@ -455,6 +481,8 @@ mod monitoring {
 
 #[cfg(test)]
 mod test_core_monitoring;
+#[cfg(test)]
+mod test_performance_stats;
 #[cfg(test)]
 mod test_serialization_compatibility;
 
@@ -1222,7 +1250,33 @@ impl GrainlifyContract {
         monitoring::get_state_snapshot(&env)
     }
 
-    /// Get performance stats for a function
+    /// Retrieves performance statistics for a specific function.
+    ///
+    /// Returns accumulated metrics including call count, total execution time,
+    /// average execution time, and timestamp of the last invocation.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `function_name` - Symbol identifying the function (e.g., `init`, `upgrade`)
+    ///
+    /// # Returns
+    /// `PerformanceStats` with:
+    /// - `function_name`: The queried function identifier
+    /// - `call_count`: Total number of tracked invocations
+    /// - `total_time`: Cumulative execution time across all calls
+    /// - `avg_time`: Average execution time per call
+    /// - `last_called`: Ledger timestamp of most recent invocation
+    ///
+    /// # Retention Policy
+    /// Performance stats are stored in persistent storage and retained
+    /// indefinitely. Storage is bounded by the number of tracked hot functions
+    /// (init, upgrade, set_ver, migrate). No automatic eviction is performed.
+    ///
+    /// # Example
+    /// ```rust
+    /// let stats = contract.get_performance_stats(&env, Symbol::short("upgrade"));
+    /// assert!(stats.call_count > 0);
+    /// ```
     pub fn get_performance_stats(env: Env, function_name: Symbol) -> monitoring::PerformanceStats {
         monitoring::get_performance_stats(&env, function_name)
     }
