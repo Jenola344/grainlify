@@ -689,7 +689,7 @@ pub struct MigrationEvent {
 /// use soroban_sdk::{Address, Env};
 ///
 /// let env = Env::default();
-/// let admin = Address::generate(&env);
+/// let admin = Address::random(&env);
 ///
 /// // Initialize contract
 /// contract.init(&env, &admin);
@@ -2022,9 +2022,9 @@ mod test {
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
         let mut signers = soroban_sdk::Vec::new(&env);
-        signers.push_back(Address::generate(&env));
-        signers.push_back(Address::generate(&env));
-        signers.push_back(Address::generate(&env));
+        signers.push_back(Address::random(&env));
+        signers.push_back(Address::random(&env));
+        signers.push_back(Address::random(&env));
 
         client.init(&signers, &2u32);
     }
@@ -2037,7 +2037,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         client.set_version(&2);
@@ -2052,7 +2052,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
         client.set_version(&5);
 
@@ -2073,7 +2073,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         for version in 1..=25u32 {
@@ -2096,7 +2096,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         // Initial version should be 2
@@ -2128,7 +2128,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
@@ -2146,7 +2146,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         let migration_hash = BytesN::from_array(&env, &[0u8; 32]);
@@ -2167,7 +2167,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         // Initially no previous version
@@ -2192,7 +2192,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
 
         // 1. Initialize contract
         client.init_admin(&admin);
@@ -2228,7 +2228,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         // Migrate from v2 to v3
@@ -2245,7 +2245,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         let initial_event_count = env.events().all().len();
@@ -2266,7 +2266,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         assert_eq!(client.get_version(), 2);
@@ -2280,7 +2280,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         let chain_id = String::from_str(&env, "stellar");
         let network_id = String::from_str(&env, "testnet");
 
@@ -2305,7 +2305,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         let chain_id = String::from_str(&env, "ethereum");
         let network_id = String::from_str(&env, "mainnet");
 
@@ -2326,8 +2326,8 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin1 = Address::generate(&env);
-        let admin2 = Address::generate(&env);
+        let admin1 = Address::random(&env);
+        let admin2 = Address::random(&env);
         let chain_id = String::from_str(&env, "stellar");
         let network_id = String::from_str(&env, "testnet");
 
@@ -2346,7 +2346,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
 
         // Legacy init should still work (without network config)
         client.init_admin(&admin);
@@ -2368,8 +2368,8 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin1 = Address::generate(&env);
-        let admin2 = Address::generate(&env);
+        let admin1 = Address::random(&env);
+        let admin2 = Address::random(&env);
 
         client.init_admin(&admin1);
         client.init_admin(&admin2);
@@ -2383,7 +2383,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         client.set_version(&3);
@@ -2406,7 +2406,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         // Verify initial version
@@ -2428,7 +2428,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         let initial_version = client.get_version();
@@ -2456,7 +2456,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         env.mock_all_auths_allowing_non_root_auth();
@@ -2479,7 +2479,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         client.set_version(&4);
@@ -2498,7 +2498,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         let hash = BytesN::from_array(&env, &[5u8; 32]);
@@ -2522,7 +2522,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         let initial_events = env.events().all().len();
@@ -2542,7 +2542,7 @@ mod test {
         let contract_id = env.register_contract(None, GrainlifyContract);
         let client = GrainlifyContractClient::new(&env, &contract_id);
 
-        let admin = Address::generate(&env);
+        let admin = Address::random(&env);
         client.init_admin(&admin);
 
         let v_before = client.get_version();
