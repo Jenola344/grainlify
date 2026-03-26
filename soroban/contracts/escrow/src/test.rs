@@ -4,7 +4,7 @@
 
 use super::*;
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{testutils::Events, TryFromVal, token, Address, Env, String, Symbol};
+use soroban_sdk::{testutils::Events, token, Address, Env, String, Symbol, TryFromVal};
 
 fn create_token<'a>(
     env: &'a Env,
@@ -51,12 +51,14 @@ fn setup<'a>(
 }
 
 fn has_event_topic(env: &Env, topic_name: &str) -> bool {
-    use soroban_sdk::IntoVal;
-    let events = env.events().all();
-    let expected: soroban_sdk::Val = Symbol::new(env, topic_name).into_val(env);
-    for (_contract, topics, _data) in events.iter() {
-        if topics.len() > 0 && topics.get(0).unwrap().get_payload() == expected.get_payload() {
-            return true;
+    let topic_symbol = Symbol::new(env, topic_name);
+    for event in env.events().all().iter() {
+        for topic in event.1.iter() {
+            if let Ok(symbol) = Symbol::try_from_val(env, &topic) {
+                if symbol == topic_symbol {
+                    return true;
+                }
+            }
         }
     }
     false
@@ -179,4 +181,62 @@ fn test_generic_escrow_still_enforces_identity_limits() {
     let deadline = env.ledger().timestamp() + 1000;
     let res = client.try_lock_funds(&depositor, &bounty_id, &amount, &deadline);
     assert!(res.is_err());
+}
+
+#[test]
+fn test_jurisdiction_lock_pause_blocks_new_locks() {
+    let env = Env::default();
+    let amount = 10_000i128;
+    let (client, _cid, _admin, depositor, _contributor, _token_client) = setup(&env, amount);
+
+    let bounty_id = 53u64;
+    let deadline = env.ledger().timestamp() + 1000;
+    let cfg = EscrowJurisdictionConfig {
+        tag: Some(String::from_str(&env, "EU-only")),
+        requires_kyc: false,
+        enforce_identity_limits: true,
+        lock_paused: true,
+        release_paused: false,
+        refund_paused: false,
+        max_lock_amount: Some(20_000),
+    };
+
+    let res = client.try_lock_funds_with_jurisdiction(
+        &depositor,
+        &bounty_id,
+        &amount,
+        &deadline,
+        &OptionalJurisdiction::Some(cfg),
+    );
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_jurisdiction_events_emitted() {
+    let env = Env::default();
+    let amount = 10_000i128;
+    let (client, _cid, _admin, depositor, contributor, _token_client) = setup(&env, amount);
+
+    let bounty_id = 54u64;
+    let deadline = env.ledger().timestamp() + 1000;
+    let cfg = EscrowJurisdictionConfig {
+        tag: Some(String::from_str(&env, "pilot-zone")),
+        requires_kyc: false,
+        enforce_identity_limits: false,
+        lock_paused: false,
+        release_paused: false,
+        refund_paused: false,
+        max_lock_amount: Some(100_000),
+    };
+
+    client.lock_funds_with_jurisdiction(
+        &depositor,
+        &bounty_id,
+        &amount,
+        &deadline,
+        &OptionalJurisdiction::Some(cfg),
+    );
+    client.release_funds(&bounty_id, &contributor);
+
+    assert!(has_event_topic(&env, "juris"));
 }

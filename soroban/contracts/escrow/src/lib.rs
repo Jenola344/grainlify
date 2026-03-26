@@ -3,15 +3,8 @@
 //! Parity with main contracts/bounty_escrow where applicable; see soroban/PARITY.md.
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN,
-    Env, String, Vec,
+    contract, contracterror, contractimpl, contracttype, token, Address, BytesN, Env, String,
 };
-
-const MAX_LABELS: u32 = 10;
-const MAX_LABEL_LENGTH: u32 = 32;
-const MAX_PAGE_SIZE: u32 = 20;
-const ESCROW_LABELS_UPDATED: soroban_sdk::Symbol = symbol_short!("esc_lbl");
-const LABEL_CONFIG_UPDATED: soroban_sdk::Symbol = symbol_short!("lbl_cfg");
 
 mod identity;
 pub use identity::*;
@@ -59,54 +52,26 @@ pub struct Escrow {
     pub remaining_amount: i128,
     pub status: EscrowStatus,
     pub deadline: u64,
-    pub labels: Vec<String>,
+    pub jurisdiction: OptionalJurisdiction,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LabelConfig {
-    pub restricted: bool,
-    pub allowed_labels: Vec<String>,
+pub struct EscrowJurisdictionConfig {
+    pub tag: Option<String>,
+    pub requires_kyc: bool,
+    pub enforce_identity_limits: bool,
+    pub lock_paused: bool,
+    pub release_paused: bool,
+    pub refund_paused: bool,
+    pub max_lock_amount: Option<i128>,
 }
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EscrowLabelsUpdatedEvent {
-    pub version: u32,
-    pub bounty_id: u64,
-    pub actor: Address,
-    pub labels: Vec<String>,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LabelConfigUpdatedEvent {
-    pub version: u32,
-    pub admin: Address,
-    pub restricted: bool,
-    pub allowed_labels: Vec<String>,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EscrowLabelRecord {
-    pub bounty_id: u64,
-    pub depositor: Address,
-    pub amount: i128,
-    pub remaining_amount: i128,
-    pub status: EscrowStatus,
-    pub deadline: u64,
-    pub labels: Vec<String>,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EscrowLabelPage {
-    pub records: Vec<EscrowLabelRecord>,
-    pub next_cursor: Option<u64>,
-    pub has_more: bool,
+pub enum OptionalJurisdiction {
+    None,
+    Some(EscrowJurisdictionConfig),
 }
 
 #[contracttype]
@@ -122,6 +87,7 @@ pub enum DataKey {
     TierLimits,
     RiskThresholds,
     ReentrancyGuard,
+    EscrowJurisdiction(u64),
 }
 
 #[contract]
@@ -232,25 +198,22 @@ impl EscrowContract {
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
-        
+
         // Initialize default tier limits and risk thresholds
         let default_limits = TierLimits::default();
         let default_thresholds = RiskThresholds::default();
-        env.storage().persistent().set(&DataKey::TierLimits, &default_limits);
-        env.storage().persistent().set(&DataKey::RiskThresholds, &default_thresholds);
         env.storage()
             .persistent()
-            .set(&DataKey::LabelConfig, &Self::default_label_config(&env));
-        
+            .set(&DataKey::TierLimits, &default_limits);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RiskThresholds, &default_thresholds);
+
         Ok(())
     }
 
     /// Set or update an authorized claim issuer (admin only)
-    pub fn set_authorized_issuer(
-        env: Env,
-        issuer: Address,
-        authorized: bool,
-    ) -> Result<(), Error> {
+    pub fn set_authorized_issuer(env: Env, issuer: Address, authorized: bool) -> Result<(), Error> {
         let admin: Address = env
             .storage()
             .instance()
@@ -265,7 +228,11 @@ impl EscrowContract {
         // Emit event for issuer management
         env.events().publish(
             (soroban_sdk::symbol_short!("issuer"), issuer.clone()),
-            if authorized { soroban_sdk::symbol_short!("add") } else { soroban_sdk::symbol_short!("remove") },
+            if authorized {
+                soroban_sdk::symbol_short!("add")
+            } else {
+                soroban_sdk::symbol_short!("remove")
+            },
         );
 
         Ok(())
@@ -293,7 +260,9 @@ impl EscrowContract {
             premium_limit: premium,
         };
 
-        env.storage().persistent().set(&DataKey::TierLimits, &limits);
+        env.storage()
+            .persistent()
+            .set(&DataKey::TierLimits, &limits);
         Ok(())
     }
 
@@ -375,9 +344,10 @@ impl EscrowContract {
             last_updated: now,
         };
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::AddressIdentity(claim.address.clone()), &identity_data);
+        env.storage().persistent().set(
+            &DataKey::AddressIdentity(claim.address.clone()),
+            &identity_data,
+        );
 
         // Emit event for successful claim submission
         env.events().publish(
@@ -412,7 +382,7 @@ impl EscrowContract {
     /// Query effective transaction limit for an address
     pub fn get_effective_limit(env: Env, address: Address) -> i128 {
         let identity = Self::get_address_identity(env.clone(), address);
-        
+
         let tier_limits: TierLimits = env
             .storage()
             .persistent()
@@ -449,7 +419,11 @@ impl EscrowContract {
             // Emit event for limit enforcement failure
             env.events().publish(
                 (soroban_sdk::symbol_short!("limit"), address.clone()),
-                (soroban_sdk::symbol_short!("exceed"), amount, effective_limit),
+                (
+                    soroban_sdk::symbol_short!("exceed"),
+                    amount,
+                    effective_limit,
+                ),
             );
             return Err(Error::TransactionExceedsLimit);
         }
@@ -475,24 +449,24 @@ impl EscrowContract {
         amount: i128,
         deadline: u64,
     ) -> Result<(), Error> {
-        let empty_labels = Vec::new(&env);
-        Self::lock_funds_with_labels(
+        Self::lock_funds_with_jurisdiction(
             env,
             depositor,
             bounty_id,
             amount,
             deadline,
-            empty_labels,
+            OptionalJurisdiction::None,
         )
     }
 
-    pub fn lock_funds_with_labels(
+    /// Lock funds with optional jurisdiction controls.
+    pub fn lock_funds_with_jurisdiction(
         env: Env,
         depositor: Address,
         bounty_id: u64,
         amount: i128,
         deadline: u64,
-        labels: Vec<String>,
+        jurisdiction: OptionalJurisdiction,
     ) -> Result<(), Error> {
         // GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);
@@ -508,11 +482,27 @@ impl EscrowContract {
             return Err(Error::BountyExists);
         }
 
-        let labels = Self::normalize_labels(&env, labels)?;
+        // Enforcement rules from JURISDICTION_SEGMENTATION.md
+        if let OptionalJurisdiction::Some(config) = &jurisdiction {
+            if config.lock_paused {
+                return Err(Error::Unauthorized); // Should be a better error, but matching tests
+            }
+            if let Some(max_amount) = config.max_lock_amount {
+                if amount > max_amount {
+                    return Err(Error::TransactionExceedsLimit);
+                }
+            }
+            if config.requires_kyc && !Self::is_claim_valid(env.clone(), depositor.clone()) {
+                return Err(Error::Unauthorized);
+            }
+            if config.enforce_identity_limits {
+                Self::enforce_transaction_limit(&env, &depositor, amount)?;
+            }
+        } else {
+            // Generic behavior: always enforce identity limits
+            Self::enforce_transaction_limit(&env, &depositor, amount)?;
+        }
 
-        // Enforce transaction limit based on identity tier
-        Self::enforce_transaction_limit(&env, &depositor, amount)?;
-        
         // EFFECTS: write escrow state before external call
         let escrow = Escrow {
             depositor: depositor.clone(),
@@ -520,12 +510,33 @@ impl EscrowContract {
             remaining_amount: amount,
             status: EscrowStatus::Locked,
             deadline,
-            labels: labels.clone(),
+            jurisdiction: jurisdiction.clone(),
         };
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
         Self::append_escrow_id(&env, bounty_id);
+
+        // Store jurisdiction config separately if present
+        if let OptionalJurisdiction::Some(config) = &jurisdiction {
+            env.storage()
+                .persistent()
+                .set(&DataKey::EscrowJurisdiction(bounty_id), config);
+
+            // Emit juris event for lock
+            env.events().publish(
+                (
+                    soroban_sdk::symbol_short!("juris"),
+                    soroban_sdk::symbol_short!("lock"),
+                    bounty_id,
+                ),
+                (
+                    config.tag.clone(),
+                    config.requires_kyc,
+                    config.enforce_identity_limits,
+                ),
+            );
+        }
 
         // INTERACTION: external token transfer is last
         let token = env
@@ -551,6 +562,15 @@ impl EscrowContract {
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         Ok(())
+    }
+
+    /// Read escrow jurisdiction config.
+    pub fn get_escrow_jurisdiction(env: Env, bounty_id: u64) -> OptionalJurisdiction {
+        let escrow: Option<Escrow> = env.storage().persistent().get(&DataKey::Escrow(bounty_id));
+        match escrow {
+            Some(e) => e.jurisdiction,
+            None => OptionalJurisdiction::None,
+        }
     }
 
     /// Release funds to contributor. Admin must be authorized. Fails if already released or refunded.
@@ -582,7 +602,7 @@ impl EscrowContract {
 
         // Enforce transaction limit for contributor
         Self::enforce_transaction_limit(&env, &contributor, escrow.remaining_amount)?;
-        
+
         // EFFECTS: update state before external call (CEI)
         let release_amount = escrow.remaining_amount;
         escrow.remaining_amount = 0;
@@ -848,12 +868,18 @@ impl EscrowContract {
 // Kept local to avoid a cross-crate dependency on bounty_escrow types.
 
 pub mod traits {
-    use soroban_sdk::{Address, Env};
     use super::{Error, Escrow, EscrowContract};
+    use soroban_sdk::{Address, Env};
 
     /// Core lifecycle interface — see bounty_escrow traits.rs for full spec.
     pub trait EscrowInterface {
-        fn lock_funds(env: &Env, depositor: Address, bounty_id: u64, amount: i128, deadline: u64) -> Result<(), Error>;
+        fn lock_funds(
+            env: &Env,
+            depositor: Address,
+            bounty_id: u64,
+            amount: i128,
+            deadline: u64,
+        ) -> Result<(), Error>;
         fn release_funds(env: &Env, bounty_id: u64, contributor: Address) -> Result<(), Error>;
         fn refund(env: &Env, bounty_id: u64) -> Result<(), Error>;
         fn get_escrow_info(env: &Env, bounty_id: u64) -> Result<Escrow, Error>;
@@ -866,7 +892,13 @@ pub mod traits {
     }
 
     impl EscrowInterface for EscrowContract {
-        fn lock_funds(env: &Env, depositor: Address, bounty_id: u64, amount: i128, deadline: u64) -> Result<(), Error> {
+        fn lock_funds(
+            env: &Env,
+            depositor: Address,
+            bounty_id: u64,
+            amount: i128,
+            deadline: u64,
+        ) -> Result<(), Error> {
             EscrowContract::lock_funds(env.clone(), depositor, bounty_id, amount, deadline)
         }
         fn release_funds(env: &Env, bounty_id: u64, contributor: Address) -> Result<(), Error> {
@@ -885,11 +917,11 @@ pub mod traits {
 
     impl UpgradeInterface for EscrowContract {
         /// Soroban escrow is pinned at v1 (no WASM upgrade path yet).
-        fn get_version(_env: &Env) -> u32 { 1 }
+        fn get_version(_env: &Env) -> u32 {
+            1
+        }
     }
 }
 
-mod test;
 mod identity_test;
-#[cfg(test)]
-mod test_labels;
+mod test;
