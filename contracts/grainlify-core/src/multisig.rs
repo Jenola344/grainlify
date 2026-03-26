@@ -151,30 +151,6 @@ impl MultiSig {
         !proposal.executed && proposal.approvals.len() >= config.threshold
     }
 
-    pub fn is_contract_paused(env: &Env) -> bool {
-        env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
-    }
-
-    pub fn pause(env: &Env, signer: Address) {
-        signer.require_auth();
-        let config = Self::get_config(env);
-        Self::assert_signer(&config, &signer);
-        env.storage().instance().set(&DataKey::Paused, &true);
-        env.events().publish((symbol_short!("paused"),), signer);
-    }
-
-    pub fn unpause(env: &Env, signer: Address) {
-        signer.require_auth();
-        let config = Self::get_config(env);
-        Self::assert_signer(&config, &signer);
-        env.storage().instance().set(&DataKey::Paused, &false);
-        env.events().publish((symbol_short!("unpaused"),), signer);
-    }
-
-    pub fn is_state_inconsistent(_env: &Env) -> bool {
-        false
-    }
-
     /// Marks a proposal as executed after the guarded action succeeds.
     pub fn mark_executed(env: &Env, proposal_id: u64) {
         let mut proposal = Self::get_proposal(env, proposal_id);
@@ -239,7 +215,10 @@ impl MultiSig {
 
     /// Return whether the contract is currently paused.
     pub fn is_contract_paused(env: &Env) -> bool {
-        env.storage().instance().get(&DataKey::Paused).unwrap_or(false)
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
     }
 
     /// Return whether the multisig configuration is structurally unsafe.

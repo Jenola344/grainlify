@@ -20,9 +20,7 @@ mod governance;
 pub mod nonce;
 pub mod pseudo_randomness;
 
-pub use governance::{
-    GovernanceConfig, Proposal, ProposalStatus, Vote, VoteType, VotingScheme,
-};
+pub use governance::{GovernanceConfig, Proposal, ProposalStatus, Vote, VoteType, VotingScheme};
 
 // ============================================================================
 // Contract Errors
@@ -34,7 +32,7 @@ pub use governance::{
 #[repr(u32)]
 pub enum ContractError {
     AlreadyInitialized = 1,
-    NotAdmin = 3,           // Unified UNAUTHORIZED
+    NotAdmin = 3, // Unified UNAUTHORIZED
     NotInitialized = 2,
     ThresholdNotMet = 101,
     ProposalNotFound = 102,
@@ -503,9 +501,9 @@ mod monitoring {
 #[cfg(test)]
 mod test_core_monitoring;
 #[cfg(test)]
-mod test_serialization_compatibility;
-#[cfg(test)]
 mod test_pseudo_randomness;
+#[cfg(test)]
+mod test_serialization_compatibility;
 #[cfg(test)]
 mod test_version_helpers;
 
@@ -1271,10 +1269,10 @@ impl GrainlifyContract {
         // Security: Verify contract state is consistent before upgrade
         if !monitoring::verify_invariants(&env) {
             monitoring::track_operation(
-                &env, 
-                Symbol::new(&env, "execute_upgrade"), 
-                env.current_contract_address(), 
-                false
+                &env,
+                Symbol::new(&env, "execute_upgrade"),
+                env.current_contract_address(),
+                false,
             );
             panic!("Contract state inconsistent - upgrade blocked");
         }
@@ -1282,10 +1280,10 @@ impl GrainlifyContract {
         // Verify proposal exists and has sufficient approvals
         if !MultiSig::can_execute(&env, proposal_id) {
             monitoring::track_operation(
-                &env, 
-                Symbol::new(&env, "execute_upgrade"), 
-                env.current_contract_address(), 
-                false
+                &env,
+                Symbol::new(&env, "execute_upgrade"),
+                env.current_contract_address(),
+                false,
             );
             panic!("Threshold not met or proposal not executable");
         }
@@ -1318,10 +1316,10 @@ impl GrainlifyContract {
 
         // Track successful operation
         monitoring::track_operation(
-            &env, 
-            Symbol::new(&env, "execute_upgrade"), 
-            env.current_contract_address(), 
-            true
+            &env,
+            Symbol::new(&env, "execute_upgrade"),
+            env.current_contract_address(),
+            true,
         );
 
         // Track performance
