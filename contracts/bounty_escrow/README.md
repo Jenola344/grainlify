@@ -1,5 +1,42 @@
 # Bounty Escrow Contract
 
+## Batch Operations & Failure Semantics
+
+The escrow contract supports atomically locking or releasing multiple bounties in a single transaction via `batch_lock_funds` and `batch_release_funds`.
+
+### All-or-nothing atomicity
+
+A batch either succeeds completely or reverts entirely — no partial state is written. If any item fails validation (wrong amount, duplicate ID, bounty already exists, etc.) the transaction panics and every sibling item is rolled back.
+
+### Processing order
+
+Items are sorted by ascending `bounty_id` before execution, ensuring deterministic ordering regardless of input order. This makes replay and debugging reproducible across runs.
+
+### Limits
+
+| Constant | Value | Error when exceeded |
+|---|---|---|
+| `MAX_BATCH_SIZE` | 20 | `InvalidBatchSize` |
+| Duplicate `bounty_id` within one batch | — | `DuplicateBountyId` |
+
+### Common failure causes
+
+| Error | Triggered when |
+|---|---|
+| `NotInitialized` | Contract `init()` has not been called |
+| `FundsPaused` | Lock/release operations are paused by admin |
+| `ContractDeprecated` | Contract has been deprecated (lock only) |
+| `InvalidBatchSize` | Batch is empty or exceeds `MAX_BATCH_SIZE` |
+| `DuplicateBountyId` | Same `bounty_id` appears more than once in the batch |
+| `InvalidAmount` | An `amount` field is `<= 0` or outside the configured `AmountPolicy` |
+| `BountyExists` | A `bounty_id` in `batch_lock_funds` is already in storage |
+| `BountyNotFound` | A `bounty_id` in `batch_release_funds` does not exist |
+| `FundsNotLocked` | Escrow for that ID exists but is not in `Locked` status |
+
+For full details including the CEI pattern breakdown, reentrancy guarantees, and security assumptions, see [contracts/escrow/BATCH_SEMANTIC.md](contracts/escrow/BATCH_SEMANTIC.md).
+
+---
+
 ## Dry-Run Simulation API
 
 The escrow contract provides read-only dry-run entrypoints for previewing operations without mutating state. See [contracts/escrow/DRY_RUN_API.md](contracts/escrow/DRY_RUN_API.md) for full documentation.
@@ -9,6 +46,34 @@ The escrow contract provides read-only dry-run entrypoints for previewing operat
 - **dry_run_refund** – Simulate refund without transfers
 
 All return `SimulationResult` with success/error_code/amount/resulting_status/remaining_amount. No authorization required.
+
+## Metadata Constraints
+
+The escrow metadata API enforces validation rules for human-readable tags like
+`bounty_type`. See `contracts/escrow/METADATA_CONSTRAINTS.md` for the current
+limits and guidance.
+
+---
+
+## Risk flags (bounty metadata)
+
+Per-bounty risk signaling uses a `u32` bitfield on escrow metadata (`RISK_FLAG_*` constants in `lib.rs`). Admin-only entrypoints `set_escrow_risk_flags` and `clear_escrow_risk_flags` persist flags and emit `RiskFlagsUpdated` (versioned payload with `previous_flags`, `new_flags`, `admin`, `timestamp`) for indexers. Flags are informational on-chain; policy enforcement is expected off-chain. Tests: `contracts/escrow/src/test_risk_flags.rs`.
+
+## Boundary limits
+
+| Area | Behavior |
+|------|----------|
+| Amount policy | Optional inclusive `[min_amount, max_amount]` via `set_amount_policy`; violations return `AmountBelowMinimum` / `AmountAboveMaximum`. `min > max` panics. |
+| Fees | Rates are in basis points; cap is `MAX_FEE_RATE` (5000 = 50%). |
+| Batch size | `MAX_BATCH_SIZE` (20) items per `batch_lock_funds` / `batch_release_funds`. |
+| Deadlines | `u64::MAX` is stored as-is (no-expiry style); past deadlines are allowed at lock time. |
+| Pagination | `get_escrow_ids_by_status` with `limit == 0` returns an empty list. |
+
+Tests: `contracts/escrow/src/test_boundary_edge_cases.rs` (and `test_batch_failure_modes.rs` for batch edges).
+
+## Status transitions and expiry vs dispute
+
+Valid payout paths are mutually exclusive: admin `release_funds` moves escrow to `Released`; refund moves to `Refunded` / `PartiallyRefunded`. A second release or refund on a terminal state fails with `FundsNotLocked` (or related errors). When a pending claim exists (`authorize_claim`), `refund` returns `ClaimPending` even if the bounty deadline has passed—admin must `cancel_pending_claim` (or the beneficiary `claim`s) before expiry-based refund applies. Tests: `contracts/escrow/src/test_lifecycle.rs`, `test_expiration_and_dispute.rs`, `test_status_transitions.rs`.
 
 ---
 
@@ -33,3 +98,22 @@ This repository uses the recommended structure for a Soroban project:
 - If you initialized this project with any other example contracts via `--with-example`, those contracts will be in the `contracts` directory as well.
 - Contracts should have their own `Cargo.toml` files that rely on the top-level `Cargo.toml` workspace for their dependencies.
 - Frontend libraries can be added to the top-level directory as well. If you initialized this project with a frontend template via `--frontend-template` you will have those files already included.
+
+## Bounty Escrow Auto-Refund Rules
+
+For `contracts/escrow`, automated refund triggering is permission-restricted:
+
+- `refund(bounty_id)` requires authenticated authorization from both:
+  - Contract `admin`
+  - Escrow `depositor`
+- Refund eligibility is still governed by existing rules:
+  - Deadline-based refund when `now >= deadline`, or
+  - Admin-approved refund via `approve_refund`
+- Unauthorized callers cannot trigger refund execution.
+
+See:
+
+- `contracts/escrow/src/lib.rs` (`refund`)
+- `contracts/escrow/src/test_auto_refund_permissions.rs`
+- `contracts/escrow/AUTO_REFUND_TESTS.md`
+- `SECURITY.md`

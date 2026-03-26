@@ -75,14 +75,7 @@ fn test_full_bounty_lifecycle_with_refund() {
         invoke: &MockAuthInvoke {
             contract: &escrow_client.address,
             fn_name: "lock_funds",
-            args: (
-                depositor.clone(),
-                bounty_id,
-                initial_amount,
-                deadline,
-                Option::<bool>::None,
-            )
-                .into_val(&env),
+            args: (depositor.clone(), bounty_id, initial_amount, deadline).into_val(&env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &token_client.address,
                 fn_name: "transfer",
@@ -149,25 +142,36 @@ fn test_full_bounty_lifecycle_with_refund() {
     assert!(approval.is_some());
 
     // 8. Execute partial refund payout
-    env.mock_auths(&[MockAuth {
-        address: &admin,
-        invoke: &MockAuthInvoke {
-            contract: &escrow_client.address,
-            fn_name: "refund",
-            args: (bounty_id,).into_val(&env),
-            sub_invokes: &[MockAuthInvoke {
-                contract: &token_client.address,
-                fn_name: "transfer",
-                args: (
-                    escrow_client.address.clone(),
-                    depositor.clone(),
-                    refund_amount,
-                )
-                    .into_val(&env),
+    env.mock_auths(&[
+        MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &escrow_client.address,
+                fn_name: "refund",
+                args: (bounty_id,).into_val(&env),
                 sub_invokes: &[],
-            }],
+            },
         },
-    }]);
+        MockAuth {
+            address: &depositor,
+            invoke: &MockAuthInvoke {
+                contract: &escrow_client.address,
+                fn_name: "refund",
+                args: (bounty_id,).into_val(&env),
+                sub_invokes: &[MockAuthInvoke {
+                    contract: &token_client.address,
+                    fn_name: "transfer",
+                    args: (
+                        escrow_client.address.clone(),
+                        depositor.clone(),
+                        refund_amount,
+                    )
+                        .into_val(&env),
+                    sub_invokes: &[],
+                }],
+            },
+        },
+    ]);
     escrow_client.refund(&bounty_id);
 
     // Verify partially refunded state
@@ -200,25 +204,36 @@ fn test_full_bounty_lifecycle_with_refund() {
     escrow_client.approve_refund(&bounty_id, &final_amount, &depositor, &RefundMode::Full);
 
     // Set auth for final refund with nested token transfer
-    env.mock_auths(&[MockAuth {
-        address: &admin,
-        invoke: &MockAuthInvoke {
-            contract: &escrow_client.address,
-            fn_name: "refund",
-            args: (bounty_id,).into_val(&env),
-            sub_invokes: &[MockAuthInvoke {
-                contract: &token_client.address,
-                fn_name: "transfer",
-                args: (
-                    escrow_client.address.clone(),
-                    depositor.clone(),
-                    final_amount,
-                )
-                    .into_val(&env),
+    env.mock_auths(&[
+        MockAuth {
+            address: &admin,
+            invoke: &MockAuthInvoke {
+                contract: &escrow_client.address,
+                fn_name: "refund",
+                args: (bounty_id,).into_val(&env),
                 sub_invokes: &[],
-            }],
+            },
         },
-    }]);
+        MockAuth {
+            address: &depositor,
+            invoke: &MockAuthInvoke {
+                contract: &escrow_client.address,
+                fn_name: "refund",
+                args: (bounty_id,).into_val(&env),
+                sub_invokes: &[MockAuthInvoke {
+                    contract: &token_client.address,
+                    fn_name: "transfer",
+                    args: (
+                        escrow_client.address.clone(),
+                        depositor.clone(),
+                        final_amount,
+                    )
+                        .into_val(&env),
+                    sub_invokes: &[],
+                }],
+            },
+        },
+    ]);
 
     escrow_client.refund(&bounty_id);
 
@@ -234,6 +249,66 @@ fn test_full_bounty_lifecycle_with_refund() {
     assert_eq!(full_history.len(), 2);
     assert_eq!(full_history.get(1).unwrap().amount, final_amount);
     assert_eq!(full_history.get(1).unwrap().mode, RefundMode::Full);
+}
+
+/// Admin `release_funds` after `lock_funds` moves the full balance from the escrow SAC to the contributor.
+#[test]
+fn test_lock_to_release_sac_transfers() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token_client, token_admin) = create_token_contract(&env, &admin);
+    let escrow_client = create_escrow_contract(&env);
+
+    escrow_client.init(&admin, &token_client.address);
+    let amount = 7_500i128;
+    token_admin.mint(&depositor, &amount);
+
+    let bounty_id = 303u64;
+    let deadline = env.ledger().timestamp() + 86_400;
+    assert_eq!(token_client.balance(&depositor), amount);
+    assert_eq!(token_client.balance(&escrow_client.address), 0);
+
+    escrow_client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+
+    assert_eq!(token_client.balance(&depositor), 0);
+    assert_eq!(token_client.balance(&escrow_client.address), amount);
+    let info = escrow_client.get_escrow_info(&bounty_id);
+    assert_eq!(info.status, EscrowStatus::Locked);
+
+    escrow_client.release_funds(&bounty_id, &contributor);
+
+    assert_eq!(token_client.balance(&contributor), amount);
+    assert_eq!(token_client.balance(&escrow_client.address), 0);
+    let info = escrow_client.get_escrow_info(&bounty_id);
+    assert_eq!(info.status, EscrowStatus::Released);
+    assert_eq!(info.remaining_amount, 0);
+}
+
+/// Illegal transition: cannot release twice after full release.
+#[test]
+fn test_double_release_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let contributor = Address::generate(&env);
+    let (token_client, token_admin) = create_token_contract(&env, &admin);
+    let escrow_client = create_escrow_contract(&env);
+
+    escrow_client.init(&admin, &token_client.address);
+    token_admin.mint(&depositor, &500i128);
+    let bounty_id = 404u64;
+    let deadline = env.ledger().timestamp() + 3600;
+    escrow_client.lock_funds(&depositor, &bounty_id, &500i128, &deadline);
+    escrow_client.release_funds(&bounty_id, &contributor);
+
+    let second = escrow_client.try_release_funds(&bounty_id, &contributor);
+    assert!(second.is_err());
 }
 
 #[test]
