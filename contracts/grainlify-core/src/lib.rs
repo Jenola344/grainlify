@@ -2328,6 +2328,7 @@ mod test {
     pub mod e2e_upgrade_migration_tests;
     pub mod invariant_entrypoints_tests;
     pub mod state_snapshot_tests;
+    pub mod upgrade_rollback_scenarios;
     pub mod upgrade_rollback_tests;
 
     // WASM for testing (only available after building for wasm32 target)
