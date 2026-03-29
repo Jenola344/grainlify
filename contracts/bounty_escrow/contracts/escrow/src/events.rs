@@ -930,7 +930,7 @@ pub fn emit_pause_state_changed(env: &Env, event: crate::PauseStateChanged) {
 /// | 0 | `"em_wtd"` |
 ///
 /// ### Security notes
-/// - This function can only be called when `lock_paused = true`,
+/// Returns `Error::UpgradeSafetyFailed` when blocking safety findings = true`,
 ///   ensuring depositors have visible warning before a drain is possible.
 /// - The `amount` field reflects the **entire** contract balance at the
 ///   time of withdrawal, which may cover multiple open escrows.
