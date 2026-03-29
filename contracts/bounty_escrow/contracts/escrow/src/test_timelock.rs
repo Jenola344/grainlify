@@ -73,7 +73,7 @@ fn test_configure_timelock_above_maximum() {
 #[should_panic(expected = "Error(Contract, #7)")] // Unauthorized
 fn test_configure_timelock_unauthorized() {
     let env = Env::default();
-    
+
     let contract_id = env.register_contract(None, BountyEscrowContract);
     let client = BountyEscrowContractClient::new(&env, &contract_id);
 

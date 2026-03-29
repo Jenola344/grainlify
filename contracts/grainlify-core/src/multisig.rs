@@ -14,6 +14,7 @@ enum DataKey {
     Proposal(u64),
     ProposalCounter,
     Paused,
+    StateInconsistent,
 }
 
 /// =======================
