@@ -9,12 +9,22 @@
 //! can discover and interrogate them through a single endpoint, without coupling to a
 //! specific contract type or requiring knowledge of individual deployment addresses.
 //!
+//! ## Duplicate Registration Policy
+//!
+//! When [`register`](ViewFacade::register) is called with an address that is already in the
+//! registry, the existing entry is **updated** (not duplicated) with the new `kind` and
+//! `version` values. The entry retains its original position in insertion order.
+//!
+//! **Benefits:**
+//! - Single-source-of-truth per address (no duplicates)
+//! - Consistent query results across all view functions
+//! - Efficient admin operations (update without explicit deregister)
+//!
 //! ## Query Notes
 //!
 //! - `list_contracts` returns entries in registration order.
 //! - `contract_count` mirrors the current registry length.
-//! - `get_contract` performs an `O(n)` scan and returns the first matching
-//!   entry for the requested address.
+//! - `get_contract` performs an `O(n)` scan and returns the (unique) matching entry.
 //! - `O(n)` scans are acceptable for the intended small registry size, but
 //!   callers should avoid treating this facade as an unbounded index.
 //!
@@ -59,7 +69,6 @@ use soroban_sdk::{
 /// Using a `#[contracterror]` enum instead of bare `panic!` strings gives
 /// callers a stable integer discriminant they can match on and surfaces
 /// clearer diagnostics in simulation tools.
-use grainlify_core::errors;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -223,6 +232,17 @@ impl ViewFacade {
 
     /// Register a contract address so it appears in cross-contract views.
     ///
+    /// ## Duplicate Registration Policy
+    /// If the address is already registered, the existing entry's `kind` and
+    /// `version` are **updated** to match the new values, and the entry
+    /// maintains its original position in insertion order.
+    ///
+    /// This ensures:
+    /// - Single-source-of-truth per address (no duplicate entries)
+    /// - Consistent query results: `get_contract()` always returns the latest metadata
+    /// - List consistency: `list_contracts()` reflects all registered addresses exactly once
+    /// - Operational convenience: admin can update metadata without explicit deregister
+    ///
     /// # Arguments
     /// * `address` — On-chain address of the contract to register.
     /// * `kind`    — Role of the contract within the ecosystem.
@@ -235,11 +255,19 @@ impl ViewFacade {
     /// # Errors
     /// * [`FacadeError::NotInitialized`] — if `init` has not yet been called.
     ///
-    /// # Note
-    /// Registering the same address multiple times will create duplicate
-    /// entries. Callers should call [`get_contract`] first to check for an
-    /// existing entry, or [`deregister`] before re-registering with updated
-    /// metadata.
+    /// # Examples
+    ///
+    /// First registration creates a new entry:
+    /// ```text
+    /// register(CAB7...XYZ, BountyEscrow, 1)
+    /// list_contracts() → [(CAB7...XYZ, BountyEscrow, 1)]
+    /// ```
+    ///
+    /// Registering the same address updates the existing entry:
+    /// ```text
+    /// register(CAB7...XYZ, BountyEscrow, 2)
+    /// list_contracts() → [(CAB7...XYZ, BountyEscrow, 2)]  // updated, not duplicated
+    /// ```
     pub fn register(
         env: Env,
         address: Address,
@@ -260,11 +288,29 @@ impl ViewFacade {
             .get(&DataKey::Registry)
             .unwrap_or(Vec::new(&env));
 
-        registry.push_back(RegisteredContract {
-            address,
-            kind,
-            version,
-        });
+        // Search for existing entry with the same address.
+        let mut found = false;
+        for i in 0..registry.len() {
+            if registry.get(i).unwrap().address == address {
+                // Update the existing entry in-place to preserve insertion order.
+                registry.set(i, RegisteredContract {
+                    address: address.clone(),
+                    kind: kind.clone(),
+                    version,
+                });
+                found = true;
+                break;
+            }
+        }
+
+        // If not found, append as a new entry.
+        if !found {
+            registry.push_back(RegisteredContract {
+                address,
+                kind,
+                version,
+            });
+        }
 
         env.storage().instance().set(&DataKey::Registry, &registry);
 
